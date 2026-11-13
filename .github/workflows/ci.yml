@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Lock files resolve from the public npm registry
+        run: node scripts/normalize-lock.mjs --check
+
+      - name: Type-check and build every app
+        run: |
+          shopt -s nullglob
+          for app in apps/*/; do
+            echo "::group::$app"
+            (cd "$app" && npm ci && npm run typecheck && npm run build)
+            echo "::endgroup::"
+          done
+
+  widgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Type-check and test every widget
+        run: |
+          shopt -s nullglob
+          for widget in widgets/*/; do
+            echo "::group::$widget"
+            (
+              cd "$widget"
+              uv sync --locked
+              uv run ty check
+              # pytest exits 5 when a widget has no tests yet
+              uv run pytest || [ $? -eq 5 ]
+            )
+            echo "::endgroup::"
+          done
